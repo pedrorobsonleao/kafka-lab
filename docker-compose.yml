@@ -1,0 +1,84 @@
+version: '3.8' # Define a versão do Docker Compose
+
+services: # Define os serviços que serão executados
+    postgres: # Serviço do banco de dados PostgreSQL
+        image: postgres:alpine # Utiliza a imagem minimalista do PostgreSQL baseada no Alpine Linux
+        restart: always # Sempre reinicia o container em caso de falha
+        ports:
+            - "5432:5432" # Mapeia a porta 5432 do container para a porta 5432 do host
+        environment: # Variáveis de ambiente definidas no arquivo .env (não deve ser versionado)
+            POSTGRES_DB: ${POSTGRES_DB} # Nome do banco de dados
+            POSTGRES_USER: ${POSTGRES_USER} # Usuário do banco de dados
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # Senha do banco de dados
+        volumes:
+            - postgres_data:/var/lib/postgresql/data # Volume para persistir os dados do banco de dados
+        healthcheck: # Verifica se o container está saudável
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"] # Comando para verificar a saúde do banco de dados
+            interval: 1m30s # Intervalo entre as verificações
+            timeout: 30s # Tempo limite para a verificação
+            retries: 5 # Número de tentativas antes de considerar o container não saudável
+            start_period: 30s # Tempo de espera antes de iniciar as verificações
+
+    pgadmin: #interface grafica para o postgres
+        image: dpage/pgadmin4:latest # Utiliza a imagem mais recente do pgAdmin
+        restart: always # Sempre reinicia o container em caso de falha
+        ports:
+            - "8087:80" # Mapeia a porta 80 do container para a porta 8087 do host
+        environment: # Variáveis de ambiente definidas no arquivo .env (não deve ser versionado)
+            PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL} # Email padrão para login no pgAdmin
+            PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD} # Senha padrão para login no pgAdmin
+        depends_on: # Define a dependência do serviço pgAdmin em relação ao serviço do banco de dados
+            postgres:
+                condition: service_healthy # O pgAdmin só inicia se o banco de dados estiver saudável
+    zookeeper:
+        image: bitnami/zookeeper:3 # Utiliza a imagem do Zookeeper
+        restart: always # Sempre reinicia o container em caso de falha
+        ports:
+            - "2181:2181" # Mapeia a porta 2181 do container para a porta 2181 do host
+        volumes:
+            - 'zookeeper_data:/bitnami' # Volume para persistir os dados do Zookeeper
+        environment:
+            - ALLOW_ANONYMOUS_LOGIN=yes
+    kafka:
+        image: 'bitnami/kafka:2'
+        restart: always
+        ports:
+            - "9092:9092"
+            - "29092:29092"
+        environment:
+            - KAFKA_BROKER_ID=1
+            - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+            - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,PLAINTEXT_HOST://:29092
+            - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092,PLAINTEXT_HOST://localhost:29092
+            - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+            - ALLOW_PLAINTEXT_LISTENER=yes
+        volumes:
+            - kafka_data:/bitnami/kafka
+        depends_on:
+            - zookeeper
+    kafka-manager:
+        image: hlebalbau/kafka-manager
+        restart: always
+        ports:
+            - "9000:9000"
+        environment:
+            - ZK_HOSTS=zookeeper:2181
+        depends_on:
+            - zookeeper
+    kafka-ui:
+        image: provectuslabs/kafka-ui
+        restart: always
+        ports:
+            - "8080:8080"
+        environment:
+            - KAFKA_CLUSTERS_0_NAME=local
+            - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+            - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+        depends_on:
+            - kafka
+
+volumes: # Define os volumes utilizados pelos serviços
+    kafka_data:
+    postgres_data:  # Volume para o banco de dados PostgreSQL
+    zookeeper_data: # Volume para o Zookeeper
+        driver: local
